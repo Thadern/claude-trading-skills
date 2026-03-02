@@ -369,7 +369,8 @@ def check_existing_pr(project_root: Path, branch_name: str) -> str | None:
     try:
         prs = json.loads(result.stdout)
         if prs:
-            return prs[0].get("url", "")
+            url = prs[0].get("url")
+            return url or None
         return None
     except json.JSONDecodeError:
         return None
@@ -964,12 +965,16 @@ def create_skill_pr(
         )
 
     # Stage files
-    subprocess.run(
+    result = subprocess.run(
         ["git", "add", f"skills/{skill_name}/"],
         cwd=project_root,
-        check=True,
+        check=False,
         capture_output=True,
+        text=True,
     )
+    if result.returncode != 0:
+        logger.error("git add failed: %s", result.stderr.strip()[:300])
+        return None
 
     # Run pre-commit hooks
     if shutil.which("pre-commit"):
@@ -984,12 +989,16 @@ def create_skill_pr(
             )
             if pc_result.returncode != 0:
                 logger.info("pre-commit auto-fixed files; re-staging.")
-                subprocess.run(
+                restage = subprocess.run(
                     ["git", "add", f"skills/{skill_name}/"],
                     cwd=project_root,
-                    check=True,
+                    check=False,
                     capture_output=True,
+                    text=True,
                 )
+                if restage.returncode != 0:
+                    logger.error("git re-add failed: %s", restage.stderr.strip()[:300])
+                    return None
                 # 2nd pass
                 staged2 = _get_staged_files(project_root, skill_name)
                 if staged2:
@@ -1187,18 +1196,16 @@ def run_daily(project_root: Path, dry_run: bool = False) -> int:
         idea = select_next_idea(backlog, project_root)
         if not idea:
             logger.info("No eligible ideas in backlog.")
-            state = load_state(project_root)
-            state["last_run"] = datetime.now().isoformat()
-            state["history"].append(
-                {
-                    "mode": "daily",
-                    "idea": None,
-                    "skill": None,
-                    "dry_run": dry_run,
-                    "timestamp": datetime.now().isoformat(),
-                }
+            _record_daily_state(
+                project_root,
+                idea=None,
+                skill_name=None,
+                idea_id=None,
+                score=0,
+                pr_url=None,
+                outcome="no_ideas",
+                dry_run=dry_run,
             )
-            save_state(project_root, state)
             return 0
 
         skill_name = idea_to_skill_name(idea)
@@ -1216,22 +1223,16 @@ def run_daily(project_root: Path, dry_run: bool = False) -> int:
                 skill_name,
                 idea.get("title"),
             )
-            write_daily_generation_summary(project_root, idea, skill_name, None, None, dry_run=True)
-            state = load_state(project_root)
-            state["last_run"] = datetime.now().isoformat()
-            state["history"].append(
-                {
-                    "mode": "daily",
-                    "idea": idea.get("title"),
-                    "idea_id": idea_id,
-                    "skill": skill_name,
-                    "score": 0,
-                    "pr_url": None,
-                    "dry_run": True,
-                    "timestamp": datetime.now().isoformat(),
-                }
+            _record_daily_state(
+                project_root,
+                idea=idea,
+                skill_name=skill_name,
+                idea_id=idea_id,
+                score=0,
+                pr_url=None,
+                outcome="dry_run",
+                dry_run=True,
             )
-            save_state(project_root, state)
             return 0
 
         # Non-dry-run: full flow
