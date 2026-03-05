@@ -6,6 +6,8 @@ Combine outputs from multiple upstream edge-finding skills into a single
 weighted conviction dashboard with deduplication and contradiction detection.
 """
 
+from __future__ import annotations
+
 import argparse
 import glob
 import json
@@ -195,10 +197,26 @@ def horizon_bucket(horizon: str | None) -> str:
     """Map free-text horizon to short/medium/long/unknown buckets."""
     if not horizon:
         return "unknown"
-    text = str(horizon).lower()
+    text = str(horizon).lower().strip()
+    # Handle compact numeric+unit patterns like "20D", "4W", "3M", "1Y"
+    import re
+
+    m = re.match(r"(\d+)\s*([dwmy])$", text)
+    if m:
+        num, unit = int(m.group(1)), m.group(2)
+        if unit == "d" or (unit == "w" and num <= 12):
+            return "short"
+        if unit == "w":
+            return "medium"
+        if unit == "m" and num <= 3:
+            return "short"
+        if unit == "m" and num <= 6:
+            return "medium"
+        if unit in ("m", "y"):
+            return "long"
     if any(k in text for k in ("day", "week", "1-3 months", "1-2 months", "short")):
         return "short"
-    if any(k in text for k in ("3-6 months", "6 months", "medium")):
+    if any(k in text for k in ("3-6 months", "6 months", "3 months", "medium")):
         return "medium"
     if any(k in text for k in ("6-12 months", "12 months", "year", "long")):
         return "long"
@@ -269,6 +287,12 @@ def extract_signals_from_edge_candidates(data: list[dict]) -> list[dict]:
             tickets = doc.get("anomalies", [])
         if not tickets and "items" in doc:
             tickets = doc.get("items", [])
+
+        # Handle individual ticket YAML files (top-level dict IS the ticket)
+        if not tickets and "priority_score" in doc:
+            tickets = [doc]
+        elif not tickets and isinstance(doc.get("observation"), dict):
+            tickets = [doc]
 
         for ticket in tickets:
             if not isinstance(ticket, dict):
@@ -601,7 +625,7 @@ def deduplicate_signals(signals: list[dict], config: dict) -> tuple[list[dict], 
             # Merge tickers
             existing_tickers = set(t.upper() for t in merged_signal.get("tickers", []))
             new_tickers = set(t.upper() for t in dup.get("tickers", []))
-            merged_signal["tickers"] = list(existing_tickers | new_tickers)
+            merged_signal["tickers"] = sorted(existing_tickers | new_tickers)
 
         if duplicates:
             dedup_log.append(
@@ -828,7 +852,12 @@ def calculate_composite_score(signal: dict, config: dict) -> dict:
     avg_raw_score = sum(c["raw_score"] for c in contributing) / len(contributing)
 
     confidence_breakdown = {
-        "multi_skill_agreement": round(agreement_bonus / 0.20 * agreement_weight, 2),
+        "multi_skill_agreement": round(
+            agreement_bonus
+            / max(agreement_config.get("three_plus_skills_bonus", 0.20), 1e-9)
+            * agreement_weight,
+            2,
+        ),
         "signal_strength": round(avg_raw_score * strength_weight, 2),
         "recency": round(recency_factor * recency_weight, 2),
     }
@@ -914,7 +943,7 @@ def aggregate_signals(
             "weights": config.get("weights", DEFAULT_WEIGHTS),
             "min_conviction": min_conviction,
             "dedup_similarity_threshold": config.get("deduplication", {}).get(
-                "similarity_threshold", 0.80
+                "similarity_threshold", 0.60
             ),
         },
         "summary": {

@@ -12,6 +12,7 @@ from aggregate_signals import (
     aggregate_signals,
     apply_contradiction_adjustments,
     are_signals_similar,
+    as_ticker_list,
     calculate_composite_score,
     calculate_recency_factor,
     calculate_text_similarity,
@@ -22,8 +23,11 @@ from aggregate_signals import (
     extract_signals_from_edge_candidates,
     extract_signals_from_themes,
     generate_markdown_report,
+    horizon_bucket,
     load_config,
+    normalize_direction,
     normalize_score,
+    normalize_score_auto,
 )
 
 
@@ -688,3 +692,111 @@ class TestIntegration:
             output = json.load(f)
         assert "schema_version" in output
         assert "ranked_signals" in output
+
+
+class TestNormalizeDirection:
+    """Tests for normalize_direction utility."""
+
+    def test_long_variants(self):
+        for label in ["long", "LONG", "bull", "bullish", "buy", "accumulation", "up"]:
+            assert normalize_direction(label) == "LONG"
+
+    def test_short_variants(self):
+        for label in ["short", "SHORT", "bear", "bearish", "sell", "distribution", "down"]:
+            assert normalize_direction(label) == "SHORT"
+
+    def test_none_and_empty(self):
+        assert normalize_direction(None) == "NEUTRAL"
+        assert normalize_direction("") == "NEUTRAL"
+
+    def test_custom_default(self):
+        assert normalize_direction(None, default="LONG") == "LONG"
+
+
+class TestAsTickerList:
+    """Tests for as_ticker_list utility."""
+
+    def test_string_list(self):
+        assert as_ticker_list(["nvda", "AMD"]) == ["AMD", "NVDA"]
+
+    def test_dict_list(self):
+        assert as_ticker_list([{"symbol": "aapl"}, {"ticker": "msft"}]) == ["AAPL", "MSFT"]
+
+    def test_comma_separated_string(self):
+        assert as_ticker_list("NVDA, AMD, AAPL") == ["AAPL", "AMD", "NVDA"]
+
+    def test_empty(self):
+        assert as_ticker_list([]) == []
+        assert as_ticker_list(None) == []
+
+
+class TestNormalizeScoreAuto:
+    """Tests for normalize_score_auto utility."""
+
+    def test_zero_to_one_range(self):
+        assert normalize_score_auto(0.75) == 0.75
+
+    def test_zero_to_hundred_range(self):
+        assert normalize_score_auto(85) == 0.85
+
+    def test_over_hundred(self):
+        assert normalize_score_auto(150) == 1.0
+
+    def test_negative(self):
+        assert normalize_score_auto(-5) == 0.0
+
+    def test_none(self):
+        assert normalize_score_auto(None) == 0.0
+
+    def test_letter_grade(self):
+        assert normalize_score_auto("A") == 1.0
+
+
+class TestHorizonBucket:
+    """Tests for horizon_bucket utility."""
+
+    def test_numeric_day(self):
+        assert horizon_bucket("20D") == "short"
+        assert horizon_bucket("5d") == "short"
+
+    def test_numeric_week(self):
+        assert horizon_bucket("4W") == "short"
+        assert horizon_bucket("16w") == "medium"
+
+    def test_numeric_month(self):
+        assert horizon_bucket("2M") == "short"
+        assert horizon_bucket("6M") == "medium"
+        assert horizon_bucket("12m") == "long"
+
+    def test_text_horizons(self):
+        assert horizon_bucket("1-3 months") == "short"
+        assert horizon_bucket("3-6 months") == "medium"
+        assert horizon_bucket("3 months") == "medium"
+        assert horizon_bucket("6-12 months") == "long"
+
+    def test_none_and_unknown(self):
+        assert horizon_bucket(None) == "unknown"
+        assert horizon_bucket("custom period") == "unknown"
+
+
+class TestIndividualTicketYAML:
+    """Test that individual ticket YAML files (no 'tickets' wrapper) are handled."""
+
+    def test_single_ticket_dict_as_doc(self):
+        """When a YAML file IS the ticket (not wrapped in tickets array)."""
+        docs = [
+            {
+                "id": "ticket_001",
+                "priority_score": 88.5,
+                "observation": {"symbol": "NVDA"},
+                "holding_horizon": "20D",
+                "direction": "bullish",
+                "title": "NVDA gap up",
+                "_source_file": "tickets/exportable/ticket_001.yaml",
+            }
+        ]
+        signals = extract_signals_from_edge_candidates(docs)
+        assert len(signals) == 1
+        assert signals[0]["tickers"] == ["NVDA"]
+        assert signals[0]["raw_score"] == pytest.approx(0.885, rel=1e-2)
+        assert signals[0]["direction"] == "LONG"

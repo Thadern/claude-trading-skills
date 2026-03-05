@@ -53,39 +53,47 @@ Lowest weight because:
 The composite conviction score for an aggregated signal is calculated as:
 
 ```
-composite_score = Σ (skill_weight × normalized_signal_score × agreement_bonus)
+base_score = Σ(skill_weight × normalized_score) / Σ(skill_weight)
+composite  = min(max_score, (base_score + agreement_bonus + merge_bonus) × recency_factor)
 ```
 
 ### Normalization
 
 Raw scores from different skills are normalized to [0, 1]:
-- For numeric scores: `(score - min) / (max - min)`
+- For 0-1 scale inputs (value <= 1.0): used as-is
+- For 0-100 scale inputs (value <= 100.0): divided by 100
 - For categorical grades: A=1.0, B=0.8, C=0.6, D=0.4, F=0.2
 - Missing values: 0.0 (no contribution)
 
-### Agreement Bonus
+### Agreement Bonus (additive)
 
-When multiple skills agree on the same signal:
-- 2 skills agree: +10% to composite score
-- 3+ skills agree: +20% to composite score
-- Capped at 1.0 maximum
+When multiple skills agree on the same signal (after dedup merge):
+- 2 skills agree: +0.10 added to base_score
+- 3+ skills agree: +0.20 added to base_score
 
-### Recency Adjustment
+### Merge Bonus (additive)
 
-Recent signals receive a boost:
-- Within 24 hours: ×1.0 (no adjustment)
+When duplicates are merged, each merged duplicate adds +0.05 to base_score.
+
+### Recency Factor (multiplicative)
+
+Applied as a multiplier to the combined score:
+- Within 24 hours: ×1.00
 - 1-3 days old: ×0.95
 - 3-7 days old: ×0.90
 - 7+ days old: ×0.85
+
+Final composite is capped at 1.0.
 
 ## Deduplication Logic
 
 ### Similarity Detection
 
-Two signals are considered duplicates if:
-1. **Ticker overlap > 50%** -- More than half the tickers are the same
-2. **Theme similarity > 0.8** -- Text similarity of descriptions (cosine or Jaccard)
-3. **Direction match** -- Both LONG or both SHORT
+Two signals are considered duplicates if **direction matches** AND **either** condition is met:
+1. **Ticker overlap >= 30%** -- Jaccard overlap of ticker sets (default 0.30)
+2. **Title similarity >= 0.60** -- Word-based Jaccard similarity of titles (default 0.60)
+
+Note: OR logic is used -- a high ticker overlap alone or a high title similarity alone is sufficient.
 
 ### Merge Strategy
 
