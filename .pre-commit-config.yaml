@@ -10,6 +10,9 @@ repos:
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=500]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.9.6
@@ -34,10 +37,31 @@ repos:
           - .secrets.baseline
         exclude: '\.env$|\.json$|\.csv$|\.md$|\.zip$'
 
-  # Pre-push hook: run all skill-level tests before pushing
-  # Tests run per-skill to avoid module name collisions (scorer.py, helpers.py, etc.)
+  # Project-specific pre-commit checks
   - repo: local
     hooks:
+      - id: no-absolute-paths
+        name: Detect absolute paths with usernames
+        entry: python3 scripts/hooks/check_no_absolute_paths.py
+        language: system
+        types: [text]
+        exclude: '\.git/|\.venv/|\.secrets\.baseline$|/tests?/|CLAUDE\.md$|check_no_absolute_paths\.py$'
+
+      - id: skill-frontmatter
+        name: Validate SKILL.md frontmatter
+        entry: python3 scripts/hooks/check_skill_frontmatter.py
+        language: system
+        files: 'skills/.*/SKILL\.md$'
+
+      - id: docs-completeness
+        name: Check all skills have doc pages
+        entry: python3 scripts/hooks/check_docs_completeness.py
+        language: system
+        files: 'skills/.*/SKILL\.md$|docs/.*/skills/.*\.md$'
+        pass_filenames: false
+
+      # Pre-push hook: run all skill-level tests before pushing
+      # Tests run per-skill to avoid module name collisions (scorer.py, helpers.py, etc.)
       - id: pytest-pre-push
         name: Run all skill tests
         entry: bash scripts/run_all_tests.sh
