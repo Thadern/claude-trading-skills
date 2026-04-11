@@ -22,7 +22,7 @@ import yaml
 # Constants
 # ---------------------------------------------------------------------------
 
-DEFAULT_EXPORTABLE_FAMILIES = {"pivot_breakout", "gap_up_continuation"}
+DEFAULT_EXPORTABLE_FAMILIES = {"pivot_breakout", "gap_up_continuation", "panic_reversal", "news_reaction"}
 
 WEIGHTS: dict[str, int] = {
     "C1_edge_plausibility": 20,

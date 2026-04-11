@@ -272,6 +272,7 @@ def build_rule_hints(
                         "title": f"Downside overreaction watch in {symbol}",
                         "observation": f"{symbol} showed a negative gap anomaly (z={z_score:.2f}).",
                         "hypothesis_type": "panic_reversal",
+                        "preferred_entry_family": "panic_reversal",
                         "symbols": [symbol],
                         "regime_bias": regime,
                         "mechanism_tag": "behavior",

@@ -1779,7 +1779,7 @@ def main() -> int:
             tradable=tradable,
             top_n=max(args.top_research_n, 0),
         )
-        research_ticket_seeds.extend(news_candidates)
+        exportable_ticket_seeds.extend(news_candidates)
         if not news_available:
             skipped_modules.append("news_reaction(no_input)")
 

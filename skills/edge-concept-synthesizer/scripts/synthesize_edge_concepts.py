@@ -12,7 +12,7 @@ from typing import Any
 
 import yaml
 
-DEFAULT_EXPORTABLE_FAMILIES = {"pivot_breakout", "gap_up_continuation"}
+DEFAULT_EXPORTABLE_FAMILIES = {"pivot_breakout", "gap_up_continuation", "panic_reversal", "news_reaction"}
 
 HYPOTHESIS_TO_TITLE = {
     "breakout": "Participation-backed trend breakout",
